@@ -5,7 +5,7 @@
 #include <cmath>
 
 #define MSG_TAG 0
-#define MSG_TAG_EOF 1
+#define MSG_FINAL 255
 
 enum QueuePosition {
     Q_TOP,
@@ -51,17 +51,19 @@ int main(int argc, char* argv[]) {
         }
 
         // Send EOF value to indicate end of file
-        MPI_Send(&num, 1, MPI_UNSIGNED_CHAR, 1, MSG_TAG_EOF, MPI_COMM_WORLD);
+        num = MSG_FINAL;
+        MPI_Send(&num, 1, MPI_UNSIGNED_CHAR, 1, MSG_TAG, MPI_COMM_WORLD);
         DEBUG_PRINT("Process " << procID << " Final: " << static_cast<unsigned int>(num) << std::endl);
         
         inputFile.close();
     } 
 
     // Any other process
-    else if (procID < noProc - 1)
+    else
     {
         bool initCond = false;
         bool newBatch = true;
+        bool finish   = false;
 
         // Receive numbers from the previous process and forward them to the next process
         uint8_t num;
@@ -72,38 +74,51 @@ int main(int argc, char* argv[]) {
 
         // In process i need to have minimum of 2^(i-1) items in the TOP queue
         int condNeededItemsInTQ = pow (2, procID - 1); 
-        QueuePosition recvQueue = Q_TOP;
+        QueuePosition recvQueue = Q_BOTTOM;
         uint8_t cntRecv = 0;
+
+        int i = -1;
 
 
         while (true) {
+            i++;
+            DEBUG_PRINT("P" << procID << " ------------------ " << std::endl);
             // Receive data from the previous process
-            MPI_Recv(&num, 1, MPI_UNSIGNED_CHAR, procID - 1, MSG_TAG, MPI_COMM_WORLD, &status);
-            cntRecv++;
+            if (!finish)
+            {
+                MPI_Recv(&num, 1, MPI_UNSIGNED_CHAR, procID - 1, MSG_TAG, MPI_COMM_WORLD, &status);
+                if (++cntRecv == procID)
+                {
+                    cntRecv = 0;
+                    recvQueue = (recvQueue == Q_TOP) ? Q_BOTTOM : Q_TOP;
+                }
+                
+                // Save received data to particular queue
+                if (recvQueue == Q_TOP) 
+                {
+                    qTop.push(num);
+                } 
+                else 
+                {
+                    qBottom.push(num);
+                }
+                DEBUG_PRINT("P" << procID << " Id:" << i << " Recv: " << static_cast<unsigned int>(num) << " To Q: " << recvQueue  << " Status: " << qTop.size() << "|" << qBottom.size() <<  std::endl);
+            }
             
-            if (status.MPI_TAG == MSG_TAG_EOF) {
-                // If not the last process, forward the EOF to the next process
-                MPI_Send(&num, 1, MPI_UNSIGNED_CHAR, procID + 1, MSG_TAG_EOF, MPI_COMM_WORLD);
-                DEBUG_PRINT("Process " << procID << " Final: " << static_cast<unsigned int>(num) << std::endl);
+            if (finish) {
+                if (procID < noProc - 1)
+                {
+                    // If not the last process, forward the EOF to the next process
+                    num = 255;
+                    MPI_Send(&num, 1, MPI_UNSIGNED_CHAR, procID + 1, MSG_TAG, MPI_COMM_WORLD);
+                    DEBUG_PRINT("Process " << procID << " Final: " << static_cast<unsigned int>(num) << " Status: " << status.MPI_TAG << std::endl);
+                }
+                else
+                {
+                    DEBUG_PRINT("P" << procID << ": Recv Final: " << static_cast<unsigned int>(num) << " To Q: " << recvQueue << std::endl);
+                }
                 break; // Exit the loop
             }
-
-            // Save received data to particular queue
-            if (recvQueue == Q_TOP) 
-            {
-                qTop.push(num);
-            } 
-            else 
-            {
-                qBottom.push(num);
-            }
-
-            if (cntRecv == procID)
-            {
-                cntRecv = 0;
-                recvQueue = (recvQueue == Q_TOP) ? Q_BOTTOM : Q_TOP;
-            }
-            DEBUG_PRINT("P" << procID << ": Recv: " << static_cast<unsigned int>(num) << " To Q: " << recvQueue << std::endl);
 
             // ----------------------------------------------------------------------------
             
@@ -115,68 +130,90 @@ int main(int argc, char* argv[]) {
                 initCond = (qTop.size() >= condNeededItemsInTQ && qBottom.size() >= MIN_ITEMS_IN_BOTTOM_QUEUE);
             }
             
-            if (initCond)
+            if (initCond && !finish)
             {
+                uint8_t sendNum;
                 newBatch = false;
-                if (!qTop.empty() && !qBottom.empty())
+                
+                // From bottom queue has been sent all items in batch, continue on sending from top queue
+                if (sentItemsB == procID && qTop.size() > 0)
+                {
+                    if (qTop.front() == MSG_FINAL && qTop.size() == 1 && qBottom.size() == 0)
+                    {
+                        finish = true;
+                         DEBUG_PRINT("Finish. sentT " << static_cast<unsigned int>(sentItemsT) << " sentB " << static_cast<unsigned int>(sentItemsB) << " Tsize " <<
+                 qTop.size() << " Bsize " << qBottom.size() << std::endl);
+                        continue;
+                    }
+                    else
+                    {
+                        sendNum = qTop.front();
+                        qTop.pop();
+                        sentItemsT++;
+                    }
+                }
+                // From top queue has been sent all items in batch, continue on sending from bottom queue
+                else if (sentItemsT == procID && qBottom.size() > 0)
+                {
+                    if (qBottom.front() == MSG_FINAL && qBottom.size() == 1 && qTop.size() == 0)
+                    {
+                        finish = true;
+                         DEBUG_PRINT("Finish. sentT " << static_cast<unsigned int>(sentItemsT) << " sentB " << static_cast<unsigned int>(sentItemsB) << " Tsize " <<
+                 qTop.size() << " Bsize " << qBottom.size() << std::endl);
+                        continue;
+                    }
+                    else
+                    {
+                        sendNum = qBottom.front();
+                        qBottom.pop();
+                        sentItemsB++;
+                    }
+                }
+                else if (!qTop.empty() && !qBottom.empty())
                 {
                     // Compare the first item of the top and bottom queue and send the bigger one
                     if (qTop.front() > qBottom.front())
                     {
-                        num = qTop.front();
+                        sendNum = qTop.front();
                         qTop.pop();
                         sentItemsT++;
                     }
                     else
                     {
-                        num = qBottom.front();
+                        sendNum = qBottom.front();
                         qBottom.pop();
                         sentItemsB++;
                     }
                 }
-                // From bottom queue has been sent all items in batch, continue on sending from top queue
-                else if (sentItemsB == procID && qTop.size() > 0)
+
+               
+                
+                DEBUG_PRINT("OOF. sentT " << static_cast<unsigned int>(sentItemsT) << " sentB " << static_cast<unsigned int>(sentItemsB) << " Tsize " <<
+                 qTop.size() << " Bsize " << qBottom.size() << std::endl);
+                
+
+                if (procID < noProc - 1)
                 {
-                    num = qTop.front();
-                    qTop.pop();
-                    sentItemsT++;
+                    DEBUG_PRINT("P" << procID << ": Send: " << static_cast<unsigned int>(sendNum) << " to proc ID: " << procID+1 <<  std::endl);
+                    MPI_Send(&sendNum, 1, MPI_UNSIGNED_CHAR, procID + 1, MSG_TAG, MPI_COMM_WORLD);
                 }
-                // From top queue has been sent all items in batch, continue on sending from bottom queue
-                else if (sentItemsT == procID && qBottom.size() > 0)
+                else
                 {
-                    num = qBottom.front();
-                    qBottom.pop();
-                    sentItemsB++;
+                    DEBUG_PRINT("P" << procID << ": Final print: " << static_cast<unsigned int>(sendNum) << std::endl);
                 }
-                else if (sentItemsT == procID && sentItemsB == procID)
+
+                if (sentItemsT == procID && sentItemsB == procID)
                 {
                     sentItemsT = 0;
                     sentItemsB = 0;
                     initCond = false;
                     newBatch = true;
                 }
-
-                DEBUG_PRINT("P" << procID << ": Send: " << static_cast<unsigned int>(num) << " to proc ID: " << procID+1 <<  std::endl);
-                MPI_Send(&num, 1, MPI_UNSIGNED_CHAR, procID + 1, MSG_TAG, MPI_COMM_WORLD);
             }
         }
     }
 
-    // Last process
-    else 
-    {
-        uint8_t num;
-        MPI_Status status;
-        while (true) {
-            MPI_Recv(&num, 1, MPI_UNSIGNED_CHAR, procID - 1, MSG_TAG, MPI_COMM_WORLD, &status);
-            DEBUG_PRINT("P" << procID << ": Recv: " << static_cast<unsigned int>(num) << " To Q: " << recvQueue << std::endl);
-            if (status.MPI_TAG == MSG_TAG_EOF) {
-                break; // End
-            }
-
-            // The last process prints the final number
-        }
-    }
+   
 
     MPI_Finalize();
     return 0;
