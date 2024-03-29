@@ -10,6 +10,9 @@
 constexpr int MSG_TAG = 0;
 constexpr int MSG_FINAL = 1;
 
+// Minimum number of items in the bottom queue
+constexpr int MIN_ITEMS_IN_BOTTOM_QUEUE = 1;
+
 // Enum to distinguish between top and bottom queues
 enum QueuePosition
 {
@@ -17,29 +20,11 @@ enum QueuePosition
     Q_BOTTOM
 };
 
-#define SEND_FINAL_FROM_TOPQ (qBottom.size() != 0 && qTop.front() == 0)
-// #define SEND_FINAL_FROM_BOTTOMQ (qTop.size() == 0 && qBottom.front() == MSG_FINAL)
-
-#define DEBUG
-
-// Debugging macro
-#ifdef DEBUG
-#define DEBUG_PRINT(x) std::cout << x
-#else
-#define DEBUG_PRINT(x) \
-    do                 \
-    {                  \
-    } while (0)
-#endif
-
-// Minimum number of items in the bottom queue
-constexpr int MIN_ITEMS_IN_BOTTOM_QUEUE = 1;
 
 // Function prototypes
 void processFirst(int procID);
 void processOthers(int procID, int noProc);
-void sendData(uint8_t data, int destination);
-uint8_t receiveData(int source);
+
 
 int main(int argc, char *argv[])
 {
@@ -81,7 +66,7 @@ void processFirst(int procID)
     while (inputFile.read(reinterpret_cast<char *>(&num), sizeof(num)))
     {
         std::cout << static_cast<unsigned int>(num) << " ";
-        sendData(num, 1);
+        MPI_Send(&num, 1, MPI_UNSIGNED_CHAR, 1, MSG_TAG, MPI_COMM_WORLD);
     }
     std::cout << std::endl;
 
@@ -116,8 +101,6 @@ void processOthers(int procID, int noProc)
         {
             uint8_t recNum;
             MPI_Recv(&recNum, 1, MPI_UNSIGNED_CHAR, (procID - 1), MPI_ANY_TAG, MPI_COMM_WORLD, &status);
-            std::cout << "P" << procID << ": ";
-            printf("%d\n", status.MPI_TAG);
             if (status.MPI_TAG == MSG_FINAL)
             {
                 shouldIReceive = false;
@@ -133,8 +116,6 @@ void processOthers(int procID, int noProc)
                 }
 
                 recvQueue == Q_TOP ? qTop.push_back(num) : qBottom.push_back(num);
-                DEBUG_PRINT("Process " << procID << " received " << (int)num << " to " << recvQueue << " Queue\n");
-                printf("qTop: %ld | qBot: %ld\n", qTop.size(), qBottom.size());
                 cntRecv++;
             }
         }
@@ -152,14 +133,7 @@ void processOthers(int procID, int noProc)
             if (!qTop.empty() || !qBottom.empty())
             {
                 std::vector<std::pair<uint8_t, char>> elements; // Pair: value and origin ('T' or 'B')
-                // printf("Top sent: %d | Bottom sent: %d\n", sentItemsT, sentItemsB);
-
-
-                // Access elements directly from the deques
-                // int numElementsTop = qTop.size() >= condNeededItemsInTQ ? condNeededItemsInTQ - sentItemsT : qTop.size();
-                // // printf("qTop: %d | numElementsTop: %d\n", qTop.size(), numElementsTop);
-                // numElementsTop = numElementsTop <= 0 ? 0 : numElementsTop;
-                // std::cout << "TOP should be send: " << numElementsTop; 
+               
 
                 int numElementsTop = qTop.size() >= condNeededItemsInTQ - sentItemsT ? condNeededItemsInTQ - sentItemsT : qTop.size();  
                 for (int i = 0; i < numElementsTop; i++)
@@ -167,10 +141,7 @@ void processOthers(int procID, int noProc)
                     elements.emplace_back(qTop[i], 'T');
                 }
 
-                // int numElementsBottom = qBottom.size() >= condNeededItemsInTQ ? condNeededItemsInTQ - sentItemsB : qBottom.size();
-                // numElementsBottom = numElementsBottom <= 0 ? 0 : numElementsBottom;
                 int numElementsBottom = qBottom.size() >= condNeededItemsInTQ - sentItemsB ? condNeededItemsInTQ - sentItemsB : qBottom.size();  
-                // std::cout << " Bottom should be send: " << numElementsBottom << std::endl;
                 for (int i = 0; i < numElementsBottom; i++)
                 {
                     elements.emplace_back(qBottom[i], 'B');
@@ -194,18 +165,14 @@ void processOthers(int procID, int noProc)
 
             if (procID < noProc - 1)
             {
-                DEBUG_PRINT("P" << procID << ": Send: " << static_cast<unsigned int>(sendNum) << " to proc ID: " << procID + 1 << std::endl);
                 if (qTop.empty() && qBottom.empty())
                 {
-                    DEBUG_PRINT("P" << procID << ": Sending final." << std::endl);
                     MPI_Send(&sendNum, 1, MPI_UNSIGNED_CHAR, procID + 1, MSG_TAG, MPI_COMM_WORLD);
                     MPI_Send(&sendNum, 1, MPI_UNSIGNED_CHAR, procID + 1, MSG_FINAL, MPI_COMM_WORLD);
                     break;
                 }
                 else
                 {
-                    printf("qTop: %ld | qBot: %ld\n", qTop.size(), qBottom.size());
-
                     MPI_Send(&sendNum, 1, MPI_UNSIGNED_CHAR, procID + 1, MSG_TAG, MPI_COMM_WORLD);
                 }
 
@@ -214,14 +181,10 @@ void processOthers(int procID, int noProc)
             {
                 if (!status.MPI_TAG || !qTop.empty() || !qBottom.empty())
                 {
-                    DEBUG_PRINT("P" << procID << " Pushing: " << static_cast<unsigned int>(sendNum) << std::endl);
-                    printf("qTop: %ld | qBot: %ld\n", qTop.size(), qBottom.size());
                     finalNumbers.push_back(sendNum);
                 }
                 else
                 {
-                    std::cout << "P" << procID << ": KONCIM";
-                    printf("qTop: %ld | qBot: %ld\n", qTop.size(), qBottom.size());
                     finalNumbers.push_back(sendNum);
                     break;
                 }
@@ -246,17 +209,4 @@ void processOthers(int procID, int noProc)
         }
         std::cout << std::endl;
     }
-}
-
-void sendData(uint8_t data, int destination)
-{
-    MPI_Send(&data, 1, MPI_UNSIGNED_CHAR, destination, MSG_TAG, MPI_COMM_WORLD);
-}
-
-uint8_t receiveData(int source)
-{
-    uint8_t data;
-    MPI_Status status;
-    MPI_Recv(&data, 1, MPI_UNSIGNED_CHAR, source, MSG_TAG, MPI_COMM_WORLD, &status);
-    return data;
 }
