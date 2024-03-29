@@ -11,15 +11,19 @@
 
 /***************************************************************
  * Compile with: mpic++ -std=c++17 pms.cpp -o pms
- * Run with: mpirun -np {number of processes} ./pms
- * Example: mpirun -np 4 ./pms
+ * 
+ * Run with:        mpirun -np {number of processes} ./pms
+ * 
+ * Example:         mpirun -np 4 ./pms
+ * 
  * Capabilities:    This program can sort 2^i numbers ascending, where i is the 
  *                  number of processes.
  *                  The program reads the numbers from a file called "numbers"
  *                  and outputs the sorted numbers to the console.
+ * 
  * Tested on:       This program was tested on the Merlin cluster.
  *                  Program was tested on 1, 2, 4, 8, 16, 32, 64, 128, 256, 512 processes.
- *                  If there are more same numbers, that is no problem for this program.
+ *                  If there are same numbers, that is no problem for this program.
  ***************************************************************/
 
 #include <iostream>
@@ -46,7 +50,6 @@ enum QueuePosition
 // Function prototypes
 void processFirst(int procID);
 void processOthers(int procID, int noProc);
-
 
 
 int main(int argc, char *argv[])
