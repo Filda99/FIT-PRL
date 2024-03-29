@@ -8,7 +8,7 @@
 
 // Constants for message tags
 constexpr int MSG_TAG = 0;
-constexpr int MSG_FINAL = 255;
+constexpr int MSG_FINAL = 1;
 
 // Enum to distinguish between top and bottom queues
 enum QueuePosition
@@ -17,10 +17,10 @@ enum QueuePosition
     Q_BOTTOM
 };
 
-#define SEND_FINAL_FROM_TOPQ (qBottom.size() == 0 && qTop.front() == MSG_FINAL)
-#define SEND_FINAL_FROM_BOTTOMQ (qTop.size() == 0 && qBottom.front() == MSG_FINAL)
+#define SEND_FINAL_FROM_TOPQ (qBottom.size() != 0 && qTop.front() == 0)
+// #define SEND_FINAL_FROM_BOTTOMQ (qTop.size() == 0 && qBottom.front() == MSG_FINAL)
 
-// #define DEBUG
+#define DEBUG
 
 // Debugging macro
 #ifdef DEBUG
@@ -77,7 +77,6 @@ void processFirst(int procID)
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    std::cout << "Process " << procID << " reading numbers: ";
     uint8_t num;
     while (inputFile.read(reinterpret_cast<char *>(&num), sizeof(num)))
     {
@@ -87,7 +86,7 @@ void processFirst(int procID)
     std::cout << std::endl;
 
     // Send EOF value to indicate the end of file
-    sendData(MSG_FINAL, 1);
+    MPI_Send(&num, 1, MPI_UNSIGNED_CHAR, 1, MSG_FINAL, MPI_COMM_WORLD);
 
     inputFile.close();
 }
@@ -99,6 +98,7 @@ void processOthers(int procID, int noProc)
     uint8_t num, sendNum, sentItemsB = 0, sentItemsT = 0;
     QueuePosition recvQueue = Q_TOP;
     int condNeededItemsInTQ = pow(2, procID - 1), cntRecv = 0;
+    MPI_Status status;
 
     auto removeElement = [&](std::deque<uint8_t> &deque, uint8_t &sentItemsCounter)
     {
@@ -114,28 +114,35 @@ void processOthers(int procID, int noProc)
     {
         if (shouldIReceive)
         {
-            num = receiveData(procID - 1);
-
-            if (num == MSG_FINAL)
+            uint8_t recNum;
+            MPI_Recv(&recNum, 1, MPI_UNSIGNED_CHAR, (procID - 1), MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+            std::cout << "P" << procID << ": ";
+            printf("%d\n", status.MPI_TAG);
+            if (status.MPI_TAG == MSG_FINAL)
             {
                 shouldIReceive = false;
             }
-
-            if (cntRecv == condNeededItemsInTQ)
+            else
             {
-                cntRecv = 0;
-                recvQueue = (recvQueue == Q_TOP) ? Q_BOTTOM : Q_TOP;
-            }
+                num = recNum;
 
-            recvQueue == Q_TOP ? qTop.push_back(num) : qBottom.push_back(num);
-            DEBUG_PRINT("Process " << procID << " received " << (int)num << " to " << recvQueue << " Queue\n");
-            cntRecv++;
+                if (cntRecv == condNeededItemsInTQ)
+                {
+                    cntRecv = 0;
+                    recvQueue = (recvQueue == Q_TOP) ? Q_BOTTOM : Q_TOP;
+                }
+
+                recvQueue == Q_TOP ? qTop.push_back(num) : qBottom.push_back(num);
+                DEBUG_PRINT("Process " << procID << " received " << (int)num << " to " << recvQueue << " Queue\n");
+                printf("qTop: %ld | qBot: %ld\n", qTop.size(), qBottom.size());
+                cntRecv++;
+            }
         }
 
         if (newBatch)
         {
             initCond = (qTop.size() >= condNeededItemsInTQ && qBottom.size() >= MIN_ITEMS_IN_BOTTOM_QUEUE);
-            initCond |= SEND_FINAL_FROM_TOPQ || SEND_FINAL_FROM_BOTTOMQ;
+            initCond |= status.MPI_TAG;
         }
 
         if (initCond)
@@ -188,19 +195,36 @@ void processOthers(int procID, int noProc)
             if (procID < noProc - 1)
             {
                 DEBUG_PRINT("P" << procID << ": Send: " << static_cast<unsigned int>(sendNum) << " to proc ID: " << procID + 1 << std::endl);
-                MPI_Send(&sendNum, 1, MPI_UNSIGNED_CHAR, procID + 1, MSG_TAG, MPI_COMM_WORLD);
-                if (sendNum == MSG_FINAL)
+                if (qTop.empty() && qBottom.empty())
+                {
+                    DEBUG_PRINT("P" << procID << ": Sending final." << std::endl);
+                    MPI_Send(&sendNum, 1, MPI_UNSIGNED_CHAR, procID + 1, MSG_TAG, MPI_COMM_WORLD);
+                    MPI_Send(&sendNum, 1, MPI_UNSIGNED_CHAR, procID + 1, MSG_FINAL, MPI_COMM_WORLD);
                     break;
+                }
+                else
+                {
+                    printf("qTop: %ld | qBot: %ld\n", qTop.size(), qBottom.size());
+
+                    MPI_Send(&sendNum, 1, MPI_UNSIGNED_CHAR, procID + 1, MSG_TAG, MPI_COMM_WORLD);
+                }
+
             }
             else
             {
-                if (sendNum != MSG_FINAL)
+                if (!status.MPI_TAG || !qTop.empty() || !qBottom.empty())
                 {
                     DEBUG_PRINT("P" << procID << " Pushing: " << static_cast<unsigned int>(sendNum) << std::endl);
+                    printf("qTop: %ld | qBot: %ld\n", qTop.size(), qBottom.size());
                     finalNumbers.push_back(sendNum);
                 }
                 else
+                {
+                    std::cout << "P" << procID << ": KONCIM";
+                    printf("qTop: %ld | qBot: %ld\n", qTop.size(), qBottom.size());
+                    finalNumbers.push_back(sendNum);
                     break;
+                }
             }
 
             if (sentItemsT == condNeededItemsInTQ && sentItemsB == condNeededItemsInTQ)
@@ -215,10 +239,9 @@ void processOthers(int procID, int noProc)
 
     if (procID == noProc - 1)
     {
-        std::cout << "Final printing:" << std::endl;
         while (!finalNumbers.empty())
         {
-            std::cout << static_cast<unsigned int>(finalNumbers.back()) << " ";
+            std::cout << static_cast<unsigned int>(finalNumbers.back()) << "\n";
             finalNumbers.pop_back();
         }
         std::cout << std::endl;

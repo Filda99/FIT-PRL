@@ -1,0 +1,25 @@
+Process 1 received 151 to 0 Queue
+Process 1 received 188 to 1 Queue
+P1: Send: 188 to proc ID: 2
+Process 1 received 68 to 0 Queue
+P1: Send: 151 to proc ID: 2
+Process 1 received 32 to 1 Queue
+P1: Send: 68 to proc ID: 2
+Process 2 received 188 to 0 Queue
+Process 2 received 151 to 0 Queue
+Process 2 received 68 to 1 Queue
+P2 Pushing: 188
+151 188 68 32 
+Process 1 received 255 to 0 Queue
+P1: Send: 32 to proc ID: 2
+P1: Send: 255 to proc ID: 2
+Process 2 received 32 to 1 Queue
+P2 Pushing: 151
+Process 2 received 255 to 0 Queue
+P2 Pushing: 68
+P2 Pushing: 32
+32
+68
+151
+188
+
