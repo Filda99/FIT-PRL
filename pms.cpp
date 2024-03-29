@@ -1,3 +1,27 @@
+/***************************************************************
+ * File: pms.cpp
+ * Author: Filip Jahn
+ * Login: xjahnf00
+ * Email: xjahnf00@stud.fit.vutbr.cz
+ * Date Created: 2024-03-29
+ * Description: Implementation file for the Pipeline Merge Sort (PMS) system.
+ *              This program implements a pipeline merge sort algorithm
+ *              capable of sorting 2^i numbers efficiently.
+ ***************************************************************/
+
+/***************************************************************
+ * Compile with: mpic++ -std=c++17 pms.cpp -o pms
+ * Run with: mpirun -np {number of processes} ./pms
+ * Example: mpirun -np 4 ./pms
+ * Capabilities:    This program can sort 2^i numbers ascending, where i is the 
+ *                  number of processes.
+ *                  The program reads the numbers from a file called "numbers"
+ *                  and outputs the sorted numbers to the console.
+ * Tested on:       This program was tested on the Merlin cluster.
+ *                  Program was tested on 1, 2, 4, 8, 16, 32, 64, 128, 256, 512 processes.
+ *                  If there are more same numbers, that is no problem for this program.
+ ***************************************************************/
+
 #include <iostream>
 #include <fstream>
 #include <mpi.h>
@@ -10,7 +34,6 @@
 constexpr int MSG_TAG = 0;
 constexpr int MSG_FINAL = 1;
 
-// Minimum number of items in the bottom queue
 constexpr int MIN_ITEMS_IN_BOTTOM_QUEUE = 1;
 
 // Enum to distinguish between top and bottom queues
@@ -20,10 +43,10 @@ enum QueuePosition
     Q_BOTTOM
 };
 
-
 // Function prototypes
 void processFirst(int procID);
 void processOthers(int procID, int noProc);
+
 
 
 int main(int argc, char *argv[])
@@ -53,6 +76,22 @@ int main(int argc, char *argv[])
     return 0;
 }
 
+
+/**
+ * void processFirst(int procID)
+ * 
+ * @brief Process the first process in the pipeline.
+ * 
+ * @param procID The process ID.
+ * 
+ * @return void
+ * 
+ * This function reads the numbers from the file and sends them to the next process in the pipeline.
+ * The function also sends an EOF value to indicate the end of the file.
+ * 
+ * The function also prints the numbers to the console.
+ * 
+*/
 void processFirst(int procID)
 {
     std::ifstream inputFile("numbers", std::ios::binary);
@@ -76,15 +115,37 @@ void processFirst(int procID)
     inputFile.close();
 }
 
+
+/**
+ * void processOthers(int procID, int noProc)
+ * 
+ * @brief Process the other processes in the pipeline.
+ * 
+ * @param procID The process ID.
+ * @param noProc The number of processes.
+ * 
+ * @return void
+ * 
+ * This function receives the numbers from the previous process in the pipeline.
+ * The function sorts the numbers and sends them to the next process in the pipeline.
+ * This is done within batches of numbers.
+ * The function also sends an EOF value to indicate the end of the file.
+ * 
+*/
 void processOthers(int procID, int noProc)
 {
+    // Deques for the top and bottom queues (and final numbers to be printed)
     std::deque<uint8_t> qTop, qBottom, finalNumbers;
     bool shouldIReceive = true, initCond = false, newBatch = true;
     uint8_t num, sendNum, sentItemsB = 0, sentItemsT = 0;
+    // Initial queue position is top
     QueuePosition recvQueue = Q_TOP;
+    // Number of items needed in the top queue
     int condNeededItemsInTQ = pow(2, procID - 1), cntRecv = 0;
+    // Status for receiving messages
     MPI_Status status;
 
+    // Lambda function to remove an element from a deque
     auto removeElement = [&](std::deque<uint8_t> &deque, uint8_t &sentItemsCounter)
     {
         auto it = std::find(deque.begin(), deque.end(), sendNum);
@@ -95,8 +156,10 @@ void processOthers(int procID, int noProc)
         }
     };
 
+    // Main loop
     do
     {
+        // Receive a number from the previous process
         if (shouldIReceive)
         {
             uint8_t recNum;
@@ -109,6 +172,7 @@ void processOthers(int procID, int noProc)
             {
                 num = recNum;
 
+                // Check if the number belongs to the top or bottom queue
                 if (cntRecv == condNeededItemsInTQ)
                 {
                     cntRecv = 0;
@@ -120,21 +184,24 @@ void processOthers(int procID, int noProc)
             }
         }
 
+        // Check if we should initialize a new batch    
         if (newBatch)
         {
             initCond = (qTop.size() >= condNeededItemsInTQ && qBottom.size() >= MIN_ITEMS_IN_BOTTOM_QUEUE);
             initCond |= status.MPI_TAG;
         }
 
+        // Process the numbers
         if (initCond)
         {
             newBatch = false;
 
+            // Sort the queues (in batch)
             if (!qTop.empty() || !qBottom.empty())
             {
                 std::vector<std::pair<uint8_t, char>> elements; // Pair: value and origin ('T' or 'B')
                
-
+                // Get numbers from the queues (only the numbers in current batch) and store them in a vector with their origin
                 int numElementsTop = qTop.size() >= condNeededItemsInTQ - sentItemsT ? condNeededItemsInTQ - sentItemsT : qTop.size();  
                 for (int i = 0; i < numElementsTop; i++)
                 {
@@ -154,6 +221,7 @@ void processOthers(int procID, int noProc)
                                                        return a.first < b.first;
                                                    });
 
+                // Send the largest element to the next process
                 if (maxElement != elements.end())
                 {
                     sendNum = maxElement->first;
@@ -163,6 +231,7 @@ void processOthers(int procID, int noProc)
                 }
             }
 
+            // Send the number to the next process
             if (procID < noProc - 1)
             {
                 if (qTop.empty() && qBottom.empty())
@@ -177,6 +246,7 @@ void processOthers(int procID, int noProc)
                 }
 
             }
+            // If this is the last process, store the number in the final numbers vector
             else
             {
                 if (!status.MPI_TAG || !qTop.empty() || !qBottom.empty())
@@ -190,6 +260,7 @@ void processOthers(int procID, int noProc)
                 }
             }
 
+            // Check if we should initialize a new batch
             if (sentItemsT == condNeededItemsInTQ && sentItemsB == condNeededItemsInTQ)
             {
                 sentItemsT = 0;
@@ -200,6 +271,7 @@ void processOthers(int procID, int noProc)
         }
     } while (qTop.size() > 0 || qBottom.size() > 0);
 
+    // Print the final numbers
     if (procID == noProc - 1)
     {
         while (!finalNumbers.empty())
