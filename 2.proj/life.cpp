@@ -169,53 +169,53 @@ int main(int argc, char **argv)
         }
 
         // Calculate the next grid
-        // for (auto i = 1; i < N_ROWS_LOCAL_W_GHOST - 1; i++)
-        // {
-        //     for (auto j = 0; j < line_length; j++)
-        //     {
-        //         // Count the number of alive neighbours
-        //         int aliveNeighbours = 0;
-        //         for (auto x = -1; x <= 1; x++)
-        //         {
-        //             for (auto y = -1; y <= 1; y++)
-        //             {
-        //                 if (x == 0 && y == 0)
-        //                 {
-        //                     continue;
-        //                 }
+        for (auto j = 0; j < line_length; j++)
+        {
+            // Count the number of alive neighbours
+            int aliveNeighbours = 0;
+            // The current cell is at (1, j)
+            // Check the 8 neighbours
+            // The neighbours are at (i + x, j + y) where x and y are in [-1, 0, 1]
+            for (auto x = -1; x <= 1; x++)
+            {
+                for (auto y = -1; y <= 1; y++)
+                {
+                    if (x == 0 && y == 0)
+                    {
+                        continue;
+                    }
 
-        //                 if (currGrid[i + x][j + y] == ALIVE_CELL)
-        //                 {
-        //                     aliveNeighbours++;
-        //                 }
-        //             }
-        //         }
+                    if (currGrid[1 + x][j + y] == ALIVE_CELL)
+                    {
+                        aliveNeighbours++;
+                    }
+                }
+            }
 
-        //         // Apply the rules of the game
-        //         if (currGrid[i][j] == ALIVE_CELL)
-        //         {
-        //             if (aliveNeighbours < 2 || aliveNeighbours > 3)
-        //             {
-        //                 nextGrid[i][j] = DEAD_CELL;
-        //             }
-        //             else
-        //             {
-        //                 nextGrid[i][j] = ALIVE_CELL;
-        //             }
-        //         }
-        //         else
-        //         {
-        //             if (aliveNeighbours == 3)
-        //             {
-        //                 nextGrid[i][j] = ALIVE_CELL;
-        //             }
-        //             else
-        //             {
-        //                 nextGrid[i][j] = DEAD
-        //             }
-        //         }
-        //     }
-        // }
+            // Apply the rules of the game
+            if (currGrid[1][j] == ALIVE_CELL)
+            {
+                if (aliveNeighbours < 2 || aliveNeighbours > 3)
+                {
+                    nextGrid[1][j] = DEAD_CELL;
+                }
+                else
+                {
+                    nextGrid[1][j] = ALIVE_CELL;
+                }
+            }
+            else
+            {
+                if (aliveNeighbours == 3)
+                {
+                    nextGrid[1][j] = ALIVE_CELL;
+                }
+                else
+                {
+                    nextGrid[1][j] = DEAD_CELL;
+                }
+            }
+        }
 
         // Swap the current and next grids
         currGrid.swap(nextGrid);
