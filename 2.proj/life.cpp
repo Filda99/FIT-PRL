@@ -28,6 +28,8 @@ int main(int argc, char **argv)
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    vector<int> current_line_in_ints;
+
     if (rank == 0)
     {
         // Read the file and store lines in a vector
@@ -53,25 +55,34 @@ int main(int argc, char **argv)
         {
             const string &line = lines[0];
             line_length = line.size() - 1; // Exclude the newline character
-            cout << "0: Broadcasting the line size: " << line_length << endl;
+
+            // Save the first line to the current_line_in_ints
+            for (char c : line) 
+            {
+                current_line_in_ints.push_back(c - '0');
+            }
+            // Remove the last element (newline character)
+            current_line_in_ints.pop_back();
             
             // Broadcast the length of the line to all processes
             MPI_Bcast(&line_length, 1, MPI_INT, 0, MPI_COMM_WORLD);
         }
 
         // Send each line to the corresponding process, leave the 0'th row for 0'th process
-        cout << "0: There are " << lines.size() << " lines." << endl;
         for (int i = 1; i < lines.size(); i++)
         {
             // The lines has to be same length
-            if ((lines[i].size() - 1) == line_length || (i == lines.size() - 1) && (lines[i].size()) == line_length) {
+            if ((lines[i].size() - 1) == line_length || ((i == lines.size() - 1) && (lines[i].size()) == line_length)) {
                 const string &line = lines[i];
                 
                 // Convert string line to vector of ints
                 vector<int> line_data;
-                for (char c : line) {
+                for (char c : line) 
+                {
                     line_data.push_back(c - '0');
                 }
+                // Remove the last element (newline character)
+                line_data.pop_back();
                 
                 // Send the vector data
                 MPI_Send(line_data.data(), line_length, MPI_INT, i, 0, MPI_COMM_WORLD);
@@ -93,31 +104,22 @@ int main(int argc, char **argv)
         // Receive the length of the line from process 0
         int line_length;
         MPI_Bcast(&line_length, 1, MPI_INT, 0, MPI_COMM_WORLD);
-        cout << rank << ": Receiving the line size: " << line_length << endl;
 
         // Allocate memory to receive the line
-        vector<int> received_line(line_length + N_GHOST_COLS, 0);
+        vector<int> received_line(line_length, 0);
 
         // Receive the line from process 0
         MPI_Recv(received_line.data(), line_length, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        // Convert characters to integers and store them in the vector
-        for (int i = 0; i < line_length; ++i) {
-            received_line[i] = static_cast<int>(received_line[i]);
-        }
-
-        // Process the received line
-        cout << "Process " << rank << " received line: ";
-        for (int i = 0; i < received_line.size(); ++i) {
-            cout << received_line[i] << " ";
-        }
-        cout << endl;
-
+        // Save the received line to the current_line_in_ints
+        current_line_in_ints.assign(received_line.begin(), received_line.end());
     }
 
-    // Create a 2D space for each process with init value of the row
-    // vector<vector<int> > currGrid(N_ROWS_LOCAL_W_GHOST, vector<int>(N_GHOST_COLS, 0));
 
+    // Create a 2D space for each process with init value of the row
+    vector<vector<int> > currGrid(N_ROWS_LOCAL_W_GHOST, current_line_in_ints);
+
+    
     MPI_Finalize();
     return 0;
 }

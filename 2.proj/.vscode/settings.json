@@ -5,6 +5,7 @@
         "initializer_list": "cpp",
         "utility": "cpp",
         "xutility": "cpp",
-        "iostream": "cpp"
+        "iostream": "cpp",
+        "format": "cpp"
     }
 }
