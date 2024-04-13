@@ -11,24 +11,29 @@
 
 #define FILENAME                argv[1]
 #define N_ROWS_LOCAL_W_GHOST    3           // Number of rows for each process with ghost rows
-#define N_GHOST_COLS            2           // Number of ghost columns
+
+#define ALIVE_CELL              1
+#define DEAD_CELL               0
 
 using namespace std;
 
 int main(int argc, char **argv)
 {
-    if (argc != 2)
+    if (argc != 3)
     {
-        fprintf(stderr, "Usage: %s <file.txt>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <file.txt> <game time>\n", argv[0]);
         exit(1);
     }
+    // Get time argument from command line
+    int gameTime = atoi(argv[2]);
 
-    int rank, size;
+    int rank, noRanks;
     MPI_Init(&argc, &argv);
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    MPI_Comm_size(MPI_COMM_WORLD, &noRanks);
 
     vector<int> current_line_in_ints;
+    int line_length = 0;
 
     if (rank == 0)
     {
@@ -40,6 +45,8 @@ int main(int argc, char **argv)
             return 1;
         }
 
+        
+
         vector<string> lines;
         string line;
         while (getline(file, line))
@@ -50,7 +57,6 @@ int main(int argc, char **argv)
         file.close();
 
         // Send the length of the lines
-        int line_length = 0;
         if (lines.size() > 1)
         {
             const string &line = lines[0];
@@ -97,12 +103,11 @@ int main(int argc, char **argv)
                 MPI_Abort(MPI_COMM_WORLD, 1);
                 return 1;
             }
-        }
-    }
+        } // lines loop
+    } // rank 0
     else
     {
         // Receive the length of the line from process 0
-        int line_length;
         MPI_Bcast(&line_length, 1, MPI_INT, 0, MPI_COMM_WORLD);
 
         // Allocate memory to receive the line
@@ -113,16 +118,92 @@ int main(int argc, char **argv)
 
         // Save the received line to the current_line_in_ints
         current_line_in_ints.assign(received_line.begin(), received_line.end());
-    }
+    } // rank != 0
 
 
     // Create a 2D space for each process with init value of it's row
     vector<vector<int> > currGrid(N_ROWS_LOCAL_W_GHOST, current_line_in_ints);
     vector<vector<int> > nextGrid(N_ROWS_LOCAL_W_GHOST, current_line_in_ints);
 
-    auto upperNeighbour = (rank - 1 + size) % size;
-    auto lowerNeighbour = (rank + 1) % size;
+    auto upperNeighbour = (rank - 1 + noRanks) % noRanks;
+    auto lowerNeighbour = (rank + 1) % noRanks;
 
+    // Main time loop
+    for (auto currTime = 0; currTime < gameTime; currTime++)
+    {
+        // Send my row to the upper neighbour
+        MPI_Send(currGrid[1].data(), line_length, MPI_INT, upperNeighbour, 0, MPI_COMM_WORLD);
+        // Send my row to the lower neighbour
+        MPI_Send(currGrid[1].data(), line_length, MPI_INT, lowerNeighbour, 0, MPI_COMM_WORLD);
+
+        // Receive the first row from the upper neighbour
+        MPI_Recv(currGrid[0].data(), line_length, MPI_INT, upperNeighbour, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        // Receive the last row from the lower neighbour
+        MPI_Recv(currGrid[2].data(), line_length, MPI_INT, lowerNeighbour, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        // Print the current grid
+        cout << rank << ": Current grid at time " << currTime << endl;
+        for (auto row : currGrid)
+        {
+            for (auto cell : row)
+            {
+                cout << cell;
+            }
+            cout << endl;
+        }
+
+        // Calculate the next grid
+        // for (auto i = 1; i < N_ROWS_LOCAL_W_GHOST - 1; i++)
+        // {
+        //     for (auto j = 0; j < line_length; j++)
+        //     {
+        //         // Count the number of alive neighbours
+        //         int aliveNeighbours = 0;
+        //         for (auto x = -1; x <= 1; x++)
+        //         {
+        //             for (auto y = -1; y <= 1; y++)
+        //             {
+        //                 if (x == 0 && y == 0)
+        //                 {
+        //                     continue;
+        //                 }
+
+        //                 if (currGrid[i + x][j + y] == ALIVE_CELL)
+        //                 {
+        //                     aliveNeighbours++;
+        //                 }
+        //             }
+        //         }
+
+        //         // Apply the rules of the game
+        //         if (currGrid[i][j] == ALIVE_CELL)
+        //         {
+        //             if (aliveNeighbours < 2 || aliveNeighbours > 3)
+        //             {
+        //                 nextGrid[i][j] = DEAD_CELL;
+        //             }
+        //             else
+        //             {
+        //                 nextGrid[i][j] = ALIVE_CELL;
+        //             }
+        //         }
+        //         else
+        //         {
+        //             if (aliveNeighbours == 3)
+        //             {
+        //                 nextGrid[i][j] = ALIVE_CELL;
+        //             }
+        //             else
+        //             {
+        //                 nextGrid[i][j] = DEAD
+        //             }
+        //         }
+        //     }
+        // }
+
+        // Swap the current and next grids
+        currGrid.swap(nextGrid);
+    } // time loop
     
     MPI_Finalize();
     return 0;

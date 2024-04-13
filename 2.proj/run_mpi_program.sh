@@ -9,7 +9,7 @@ rows_count=$(cat $inputFile | wc -l)
 rows_count=$((rows_count+1))
 
 #spusteni programu
-mpirun --oversubscribe --prefix /usr/local/share/OpenMPI -np $rows_count life $inputFile
+mpirun --oversubscribe --prefix /usr/local/share/OpenMPI -np $rows_count life $inputFile 2
 
 #uklid
 rm -f life numbers
