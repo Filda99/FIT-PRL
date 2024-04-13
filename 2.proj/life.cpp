@@ -120,6 +120,9 @@ int main(int argc, char **argv)
     vector<vector<int> > currGrid(N_ROWS_LOCAL_W_GHOST, current_line_in_ints);
     vector<vector<int> > nextGrid(N_ROWS_LOCAL_W_GHOST, current_line_in_ints);
 
+    auto upperNeighbour = (rank - 1 + size) % size;
+    auto lowerNeighbour = (rank + 1) % size;
+
     
     MPI_Finalize();
     return 0;
