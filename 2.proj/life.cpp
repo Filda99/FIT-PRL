@@ -63,12 +63,15 @@ int main(int argc, char **argv)
             line_length = line.size() - 1; // Exclude the newline character
 
             // Save the first line to the current_line_in_ints
+            current_line_in_ints.push_back(0); // Add a ghost cell
             for (char c : line) 
             {
                 current_line_in_ints.push_back(c - '0');
             }
             // Remove the last element (newline character)
             current_line_in_ints.pop_back();
+            current_line_in_ints.push_back(0); // Add a ghost cell
+
             
             // Broadcast the length of the line to all processes
             MPI_Bcast(&line_length, 1, MPI_INT, 0, MPI_COMM_WORLD);
@@ -116,8 +119,15 @@ int main(int argc, char **argv)
         // Receive the line from process 0
         MPI_Recv(received_line.data(), line_length, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        // Save the received line to the current_line_in_ints
-        current_line_in_ints.assign(received_line.begin(), received_line.end());
+        // Push 0 at the beginning
+        current_line_in_ints.push_back(0);
+
+        // Insert values from received_line into current_line_in_ints
+        current_line_in_ints.insert(current_line_in_ints.end(), received_line.begin(), received_line.end());
+
+        // Push 0 at the end
+        current_line_in_ints.push_back(0);
+
     } // rank != 0
 
 
@@ -132,14 +142,20 @@ int main(int argc, char **argv)
     for (auto currTime = 0; currTime < gameTime; currTime++)
     {
         // Send my row to the upper neighbour
-        MPI_Send(currGrid[1].data(), line_length, MPI_INT, upperNeighbour, 0, MPI_COMM_WORLD);
+        MPI_Send(&currGrid[1][1], line_length, MPI_INT, upperNeighbour, 0, MPI_COMM_WORLD);
         // Send my row to the lower neighbour
-        MPI_Send(currGrid[1].data(), line_length, MPI_INT, lowerNeighbour, 0, MPI_COMM_WORLD);
+        MPI_Send(&currGrid[1][1], line_length, MPI_INT, lowerNeighbour, 0, MPI_COMM_WORLD);
 
         // Receive the first row from the upper neighbour
-        MPI_Recv(currGrid[0].data(), line_length, MPI_INT, upperNeighbour, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&currGrid[0][1], line_length, MPI_INT, upperNeighbour, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         // Receive the last row from the lower neighbour
-        MPI_Recv(currGrid[2].data(), line_length, MPI_INT, lowerNeighbour, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&currGrid[2][1], line_length, MPI_INT, lowerNeighbour, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        // Ghost column
+        currGrid[0][0] = currGrid[0][line_length];
+        currGrid[0][line_length + 1] = currGrid[0][1];
+        currGrid[2][0] = currGrid[2][line_length];
+        currGrid[2][line_length + 1] = currGrid[2][1];
 
         // Print the current grid
         cout << rank << ": Current grid at time " << currTime << endl;
