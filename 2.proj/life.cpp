@@ -116,8 +116,9 @@ int main(int argc, char **argv)
     }
 
 
-    // Create a 2D space for each process with init value of the row
+    // Create a 2D space for each process with init value of it's row
     vector<vector<int> > currGrid(N_ROWS_LOCAL_W_GHOST, current_line_in_ints);
+    vector<vector<int> > nextGrid(N_ROWS_LOCAL_W_GHOST, current_line_in_ints);
 
     
     MPI_Finalize();
