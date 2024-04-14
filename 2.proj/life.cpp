@@ -45,22 +45,19 @@ int main(int argc, char **argv)
             return 1;
         }
 
-        
-
         vector<string> lines;
         string line;
         while (getline(file, line))
         {
-            cout << "0: Reading line: " << line << endl;
             lines.push_back(line);
         }
         file.close();
 
-        // Send the length of the lines
+        // Send the length of the lines and save the first line to the zero process
         if (lines.size() > 1)
         {
             const string &line = lines[0];
-            line_length = line.size() - 1; // Exclude the newline character
+            line_length = line.size();
 
             // Save the first line to the current_line_in_ints
             current_line_in_ints.push_back(0); // Add a ghost cell
@@ -68,8 +65,6 @@ int main(int argc, char **argv)
             {
                 current_line_in_ints.push_back(c - '0');
             }
-            // Remove the last element (newline character)
-            current_line_in_ints.pop_back();
             current_line_in_ints.push_back(0); // Add a ghost cell
 
             
@@ -81,7 +76,7 @@ int main(int argc, char **argv)
         for (int i = 1; i < lines.size(); i++)
         {
             // The lines has to be same length
-            if ((lines[i].size() - 1) == line_length || ((i == lines.size() - 1) && (lines[i].size()) == line_length)) {
+            if ((lines[i].size()) == line_length) {
                 const string &line = lines[i];
                 
                 // Convert string line to vector of ints
@@ -151,25 +146,17 @@ int main(int argc, char **argv)
         // Receive the last row from the lower neighbour
         MPI_Recv(&currGrid[2][1], line_length, MPI_INT, lowerNeighbour, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        // Ghost column
+        // Ghost columns
         currGrid[0][0] = currGrid[0][line_length];
         currGrid[0][line_length + 1] = currGrid[0][1];
+        currGrid[1][0] = currGrid[1][line_length];
+        currGrid[1][line_length + 1] = currGrid[1][1];
         currGrid[2][0] = currGrid[2][line_length];
         currGrid[2][line_length + 1] = currGrid[2][1];
 
-        // Print the current grid
-        cout << rank << ": Current grid at time " << currTime << endl;
-        for (auto row : currGrid)
-        {
-            for (auto cell : row)
-            {
-                cout << cell;
-            }
-            cout << endl;
-        }
-
+      
         // Calculate the next grid
-        for (auto j = 0; j < line_length; j++)
+        for (auto j = 1; j <= line_length; j++)
         {
             // Count the number of alive neighbours
             int aliveNeighbours = 0;
@@ -220,6 +207,40 @@ int main(int argc, char **argv)
         // Swap the current and next grids
         currGrid.swap(nextGrid);
     } // time loop
+
+    // Send my row to zero process
+    if (rank != 0)
+    {
+        MPI_Send(&currGrid[1][1], line_length, MPI_INT, 0, 0, MPI_COMM_WORLD);
+    }
+    else
+    {
+        // Gather the rows from all processes
+        vector<int> allRows(line_length, 0);
+        // Copy my row to the 0'th row from index 1 to line_length
+        for (size_t i = 0; i < line_length; ++i) {
+            allRows[i] = currGrid[1][i + 1];
+        }
+        // Print the gathered row
+        printf("0: ");
+        for (auto cell : allRows)
+        {
+            cout << cell;
+        }
+        cout << endl;
+
+        for (auto i = 1; i < noRanks; i++)
+        {
+            MPI_Recv(allRows.data(), line_length, MPI_INT, i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            // Print the gathered row
+            printf("%i: ", i);
+            for (auto cell : allRows)
+            {
+                cout << cell;
+            }
+            cout << endl;
+        }
+    }
     
     MPI_Finalize();
     return 0;
