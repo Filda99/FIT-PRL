@@ -34,7 +34,39 @@
  *  - http://www.shodor.org/media/content/petascale/materials/UPModules/GameOfLife/Life_Module_Document_pdf.pdf
  ********************************************************************************/
 
-#include "life.h"
+
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <mpi.h>
+
+#define ALIVE_CELL  1
+#define DEAD_CELL   0
+#define N_ROWS_LOCAL_W_GHOST    3   // Number of rows for each process with ghost rows
+
+class GameOfLife {
+public:
+    GameOfLife(int argc, char** argv);
+    ~GameOfLife();
+
+    void runSimulation();
+    void readInputFile(const std::string& filename);
+
+private:
+    int rank, noRanks;
+    int line_length;
+    int gameTime;
+    std::vector<int> current_line_in_ints;
+    std::vector<std::vector<int>> currGrid;
+    std::vector<std::vector<int>> nextGrid;
+
+    void initializeMPI(int argc, char** argv);
+    void communicateBoundaryRows();
+    void calculateNextGrid();
+    void swapGrids();
+    void printGrid();
+};
 
 
 /**
