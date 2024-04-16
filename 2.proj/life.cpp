@@ -11,10 +11,13 @@
  * The program is limited bu the number of CPUs. The number of CPUs must be equal to the number of rows in the input file.
  * 
  * @note To compile the program, use a C++ compiler with MPI support. For example:
- *   mpic++ --prefix /usr/local/share/OpenMPI --std=c++17 -o life life.cpp
+ *      mpic++ --prefix /usr/local/share/OpenMPI --std=c++17 -o life life.cpp
  * 
  * @note To run the program, use the mpirun command with the desired number of MPI processes:
- *   mpirun --oversubscribe --prefix /usr/local/share/OpenMPI -np <rows_count> life <input_file> <num_of_steps>
+ *      mpirun --oversubscribe --prefix /usr/local/share/OpenMPI -np <rows_count> life <input_file> <num_of_steps>
+ * 
+ * @note Or run the program using the provided test.sh script:
+ *      ./test.sh <input_file> <num_of_steps>
  * 
  * @note This program requires a text file containing the initial state of the grid and the number of time steps for the simulation.
  * The input file should contain rows of 0s and 1s, where 0 represents a dead cell and 1 represents a live cell.
